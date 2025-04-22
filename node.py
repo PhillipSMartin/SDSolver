@@ -3,6 +3,7 @@ from itertools import combinations
 from trick import Trick, rho
 
 import copy
+import statistics
 
 class Node:
     def __init__(self, player, parent = None):
@@ -11,6 +12,9 @@ class Node:
 
         self.unplayed_cards = None
         self.possible_holdings = {}
+        self.score = 0
+        self.scored = False
+        self.expanded = False
         self.children = []
 
         if parent and parent.trick.winner is None:
@@ -49,12 +53,14 @@ class Decision(Node):
         return node
 
     def expand_node(self):
-        for card in self.holding:
-            self.children.append(Choice(card, self))
+        if not self.expanded:
+            for card in self.holding:
+                self.children.append(Choice(card, self))
 
     def __str__(self):
         return f"Decision node for {self.player}:\n" \
             f"  Holding: {self.holding}\n" \
+            f"  Score: {self.score}\n" \
             f"  Unplayed cards: {self.unplayed_cards}\n" \
             f"  North: ({len(self.possible_holdings['N'])}): {self.possible_holdings['N']}\n" \
             f"  East ({len(self.possible_holdings['E'])}): {self.possible_holdings['E']}\n" \
@@ -66,6 +72,19 @@ class Decision(Node):
     def show_choices(self):
         for index, choice in enumerate(self.children):
             print(f"Choice {index}: {choice}")
+
+
+    def get_score(self):
+        if not self.scored:
+            self.expand_node()
+            scores = [node.get_score() for node in self.children]
+            if self.player in ['N', 'S']:
+                self.score = max(scores)
+            else:
+                self.score = min(scores)
+        print("*****")
+        print(self)
+        return self.score
 
 class Choice(Node):
     def __init__(self, play, parent:Decision):
@@ -85,14 +104,15 @@ class Choice(Node):
         self.score = 1  if self.trick.winner in ['N', 'S'] else 0
 
     def expand_node(self):
-        if self.trick.winner:
-            next_to_play = self.trick.winner
-        else:
-            next_to_play = rho(self.player)
+        if not self.expanded:
+            if self.trick.winner:
+                next_to_play = self.trick.winner
+            else:
+                next_to_play = rho(self.player)
 
-        for holding in self.possible_holdings[next_to_play]:
-            if set(holding).isdisjoint(self.parent.holding):
-                self.children.append(Decision(next_to_play, holding, self))
+            for holding in self.possible_holdings[next_to_play]:
+                if set(holding).isdisjoint(self.parent.holding):
+                    self.children.append(Decision(next_to_play, holding, self))
 
     def __str__(self):
         return f"Choice node for {self.player}, play: {self.trick.cards_played[-1]}\n" \
@@ -104,67 +124,15 @@ class Choice(Node):
         for index, scenario in enumerate(self.children):
             print(f"Scenario {index}: {scenario}")
 
-    #         @classmethod
-    # def from_play(cls, player, play, parent):
-    #     node = cls(1, player, parent=parent)
-    #     node.trick = copy.copy(parent.trick)
-    #     winner = node.trick.play_card(play)
-    #     if winner:
-    #         node.quit_trick()
-    #     return node
-    #
-    #
-    #
-    #
-    #
-    # def quit_trick(self):
-    #     pass
-    #
-    # def expand_node(self):
-    #     pass
+    def is_terminal(self):
+        return len(self.unplayed_cards) == 0
 
-    # def is_terminal(self):
-    #     return len(self.holding) == 1 and len(self.current_trick) == 2
-    #
-    # def expand_node(self):
-    #     rho_possible_holdings = [rho_holding for rho_holding in self.possible_holdings[rho(self.player)]
-    #                              if rho_holding.isdisjoint(self.holding)]
-    #     for card in self.holding:
-    #         for rho_holding in rho_possible_holdings:
-    #             self.children.append(Node(rho(self.player), rho_holding, self ))
-    #
-    # def score_trick(self):
-    #     # determine winner
-    #     winner = min(self.current_trick, key=lambda item: Node.deck.index(item))
-    #
-    #     # increment ns score if ns won the trick
-    #     if not ((self.current_trick.index(winner) % 2) ^ (Node.seats.index(self.trick_leader) % 2)):
-    #         self.ns_tricks_won_so_far += 1
-    #
-    #     # return current score
-    #     return self.ns_tricks_won_so_far
-    #
-    # def max_value(self):
-    #     if self.is_terminal():
-    #         self.play(self.holding[0])
-    #         self.play(self.possible_holdings[rho(self.player)][0][0])
-    #         return self.score_trick()
-    #     else:
-    #         self.expand_node()
-    #         v = 0
-    #         for child in self.children:
-    #             v = max(v, child.score)
-    #         return v
-    #
-    # def min_value(self):
-    #     if self.is_terminal():
-    #         self.play(self.holding[0])
-    #         self.play(self.possible_holdings[rho(self.player)][0][0])
-    #         return self.score_trick()
-    #     else:
-    #         self.expand_node()
-    #         v = math.inf
-    #         for child in self.children:
-    #             v = min(v, child.score)
-    #         return v
+    def get_score(self):
+        if not self.is_terminal() and not self.scored:
+            self.expand_node()
+            scores = [node.get_score() for node in self.children]
+            self.score += statistics.mean(scores)
+        print("*****")
+        print(self)
+        return self.score
 
