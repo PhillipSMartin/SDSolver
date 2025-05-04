@@ -103,27 +103,31 @@ class TestNode:
 
 # for saving the score associated with a node, given a specific alpha and beta
 class N_Transposition:
-    # node's __repr__ method must return a tuple
-    def __init__(self, node, alpha, beta, score=None):
-        self.key = (node, alpha, beta)
+    def __init__(self, node_id, alpha, beta, score=None):
+        self.key = (node_id, alpha, beta)
         self.score = score
 
-    def is_hit(self, node, alpha, beta):
-        return self.key == (node, alpha, beta)
+    def is_hit(self, node_id, alpha, beta):
+        return self.key == (node_id, alpha, beta)
+
+    def is_hit_node_only(self, node_id):
+        return self.key[0] == node_id
 
     def __str__(self):
         return f'{self.key[0]}, alpha={self.key[1]}, beta={self.key[2]}, score={self.score}'
 
 # for saving the score associated with a set of nodes, given a specific alpha and beta
 class S_Transposition:
-    # node's __repr__ method must return a tuple
     def __init__(self, s, alpha, beta, score=None):
         self.s = s
         self.limits = (alpha, beta)
         self.score = score
 
-    def is_hit(self, node, alpha, beta):
-        return node.id() in self.s and self.limits == (alpha, beta)
+    def is_hit(self, node_id, alpha, beta):
+        return node_id in self.s and self.limits == (alpha, beta)
+
+    def is_hit_node_only(self, node_id):
+        return node_id in self.s
 
     def __str__(self):
         return f'{self.s}, alpha={self.limits[0]}, beta={self.limits[1]}, score={self.score}'
@@ -134,11 +138,14 @@ class TranspositionTable:
 
     # returns the entry for a specific node, alpha, and beta
     # returns None if not in the table
-    def find(self, node, alpha, beta):
+    def find(self, node_id, alpha, beta):
         for entry in self.table:
-            if entry.is_hit(node, alpha, beta):
+            if entry.is_hit(node_id, alpha, beta):
                 return entry
         return None
+
+    def find_node_only(self, node_id):
+        return [entry for entry in self.table if entry.is_hit_node_only(node_id)]
 
     # add an entry to the table
     def add(self, item):
@@ -192,7 +199,8 @@ def alpha_beta(node:TestNode, alpha:float, beta:float, level=0, verbose=False):
     global T
 
     # see if we've seen this problem before
-    hit = T.find(node, alpha, beta)
+    # ignore hit for level 0, since we need a play in addition to a score
+    hit = T.find(node.id(), alpha, beta) if level > 0 else None
 
     # if so, return previously calculated score
     if hit:
@@ -285,7 +293,7 @@ def alpha_beta(node:TestNode, alpha:float, beta:float, level=0, verbose=False):
 
     # solved
     stats.node_evaluated(level)
-    T.add(N_Transposition(node, alpha, beta, best_score))
+    T.add(N_Transposition(node.id(), alpha, beta, best_score))
     return float(best_score)
 """
 alpha - max has a way to guarantee this score 
@@ -310,7 +318,8 @@ def alpha_beta_partitioned(node:TestNode, alpha:float, beta:float, level=0, verb
     global T
 
     # see if we've seen this problem before
-    hit = T.find(node, alpha, beta)
+    # ignore hit for level 0, since we need a play in addition to a score
+    hit = T.find(node.id(), alpha, beta) if level > 0 else None
 
     # if so, return previously calculated score
     if hit:
@@ -469,12 +478,35 @@ def alpha_beta_partitioned(node:TestNode, alpha:float, beta:float, level=0, verb
     T.add(S_Transposition(best_S, alpha, beta, best_score))
     return float(best_score), best_S
 
+def show_T_entry(node_id):
+    print(f'Entries for {node_id}:')
+    for entry in T.find_node_only(node_id):
+        print(f'   {entry}')
+
+def play(node, alpha, beta, verbose=False):
+    if not node.is_terminal():
+        alpha_beta_partitioned(node, alpha, beta, verbose=verbose)
+        for child in node.get_children():
+            if child.current_play() == node.solution[0]:
+                return child
+    return None
+
 
 node = TestNode()
-alpha_beta(node, 0, MAX_PLAYS, verbose=True)
-print(f'Final solution = {node.show_solution()}')
-print(stats)
-print(f'Table size = {len(T.table)}')
+# alpha_beta_partitioned(node, 0, MAX_PLAYS, verbose=True)
+# print(f'Final solution = {node.show_solution()}')
+# print(stats)
+# print(f'Table size = {len(T.table)}')
+
+alpha = 0
+beta = MAX_PLAYS
+while node:
+    next_node = play(node, alpha, beta, verbose=False)
+    print(f'Solution = {node.show_solution()}')
+    print(stats)
+    stats = Stats(MAX_PLAYS)
+    node = next_node
+
 
 # for entry in T.table:
 #     print(entry)
