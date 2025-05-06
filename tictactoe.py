@@ -53,7 +53,7 @@ class TicTacToeNode(Node):
         returns a child of this node resulting from making the specified play
         must be overridden
         """
-        return TicTacToeNode(parent=self, play=play)
+        return TicTacToeNode(parent=self, play=int(play))
 
     def get_state(self):
         return self.state.copy()
