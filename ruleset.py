@@ -2,7 +2,7 @@ class RuleSet:
     def __init__(self, fn):
         self.fn = fn
 
-    def is_member(self, node):
+    def contains(self, node):
         return self.fn(node)
 
 class FiniteSet(RuleSet):
@@ -12,7 +12,7 @@ class FiniteSet(RuleSet):
 
 class Negation(RuleSet):
     def __init__(self, r1:RuleSet):
-        super().__init__(lambda node: not r1.is_member(node))
+        super().__init__(lambda node: not r1.contains(node))
 
 class Disjunction(RuleSet):
     def __init__(self):
@@ -25,7 +25,7 @@ class Disjunction(RuleSet):
     def fn(self, node):
         result = False
         for r_set in self.r_sets:
-            result = result or r_set.is_member(node)
+            result = result or r_set.contains(node)
             if result:
                 break
         return result
@@ -41,18 +41,9 @@ class Conjunction(RuleSet):
     def fn(self, node):
         result = True
         for r_set in self.r_sets:
-            result = result and r_set.is_member(node)
+            result = result and r_set.contains(node)
             if not result:
                 break
         return result
-
-c = AndCollection()
-c.add_rule_set(RuleSet(lambda x: not bool(x % 2)))
-c.add_rule_set(RuleSet(lambda x: not bool(x % 3)))
-
-
-
-for n in range(0, 13):
-    print(c.is_member(n))
 
 
