@@ -20,7 +20,7 @@ class TicTacToeNode(Node):
         :param play: the play that produces this node from the parent
         :return: new state
         """
-        self.state[play] = self.player(self.next_to_play ^ 1)
+        self.state[play] = self.opponent()
         return self.state
 
     def compute_score(self) -> float or None:
@@ -86,15 +86,6 @@ class TicTacToeNode(Node):
 
 
 node = TicTacToeNode()
-
-# alpha_beta(node, 0, 1, verbose=True)
-# print(f'Final solution = {node.show_solution()}')
-# print(stats)
-# print(f'Table size = {len(T.table)}')
-
-# alpha = 0
-# beta = 1
-# while node:
-#     next_node = play(node, alpha, beta, verbose=False)
-#     print(f'Solution = {node.show_solution()}')
-#     node = next_node
+game = Game(min_score = 0.0, max_score = 1.0, max_levels = 9)
+game.play(node,0, 6, partitioned=True, verbose=False)
+game.show_stats()
