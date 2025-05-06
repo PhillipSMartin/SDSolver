@@ -1,93 +1,323 @@
 from collections import Counter
 from pyexpat import ExpatError
 
+class Node:
+    """
+    Base class for game nodes
+
+    Properties:
+        state -- current game state
+        plays -- list containing each play made so far
+        next_to_play -- 0 for max, 1 for min
+        solution -- tuple containing the best next play and the resulting score
+
+    General methods:
+        id() -> str -- returns unique identifier
+        player() -> str -- returns 'max' or 'min' (next to play)
+        show_solution() -> str -- returns a verbal description of the solution
+        __str__()->str -- returns a string representation to be used in log messages
+        
+        is_terminal() -> bool -- returns True for a terminal node
+
+        make_play(play) -- updates self.plays to reflect specified play
+            calls compute_state() and updates self.state
+            calls compute_score and updates self.score if play results in a terminal node
+        compute_state(play) -- calculates new state based on current state and specified play
+        compute_score() -> float or None -- calculates the score of a terminal node
+
+        get_options() -- returns a list of possible plays
+        get_child(play) -- returns a child of this node resulting from making the specified play
+        get_children() -- returns a list of child nodes, one for each play returned by get_options()
+        get_state() -- returns a copy of self.state
+        get_plays() -- returns a copy of self.plays
+        get_last_play() -- returns the most recent play
+
+        evaluate() -> float or str -- returns score of a terminal node
+            returns string representing next to play for a non-terminal node
+
+    Methods required to use alpha_beta_partitioned search:
+        get_P() -> set[str]
+            if this is a terminal node, returns a set containing the ids of terminal nodes with the same value
+            otherwise returns a set containing only this id
+        get_R(S) -> set[str]
+            returns the ids of nodes like this node that have an immediate successor in set S
+        get_C(S) -> set[str]
+            returns a set of node ids like this node whose immediate successors are all in set S
+        get_play(S)
+            returns the play needed to move from this node to some node in the specified set
+
+    """
+
+    def __init__(self, parent=None, play=None, next_to_play=None):
+        """
+        initializer
+
+        :param parent: immediate precursor of this node
+        :param play: the play that produces this node from the parent
+        :param next_to_play: 0 if max plays next; 1 if min; Defaults to opposite of parent or max if no parent
+        """
+        self.state = parent.get_state() if parent else ''
+        self.plays = parent.get_plays() if parent else []
+        self.next_to_play = next_to_play or (1 ^ parent.next_to_play if parent else 0)
+        self.solution = (None, None)
+
+        if play:
+            # updates state and plays
+            # updates solution if this is a terminal node
+            self.make_play( play )
+
+    def id(self) -> str:
+        """ returns unique identifier """
+        return self.state
+
+    def player(self):
+        """ returns 'max' or 'min' (next to play) """
+        return ['max', 'min'][self.next_to_play]
+
+    def show_solution(self) -> str:
+        """ returns a verbal description of the solution """
+        if self.is_terminal():
+            return f'Terminal node, score={self.solution[1]}'
+
+        if not self.solution[0]:
+            return 'Not solved'
+
+        if self.next_to_play == 0:
+            return  f'Max can play {self.solution[0]} to guarantee a score of {self.solution[1]}'
+        else:
+            return f'Min can play {self.solution[0]} to hold max to a score of {self.solution[1]}'
+
+    def __str__(self) -> str:
+        """ returns a string representation to be used in log messages """
+        return self.state if len(self.state) > 0 else 'root'
+
+    def is_terminal(self) -> bool:
+        """  returns True for a terminal node  - must be overridden """
+        return False
+
+    def make_play(self, play):
+        """
+        updates self.plays to reflect specified play
+            calls compute_state() and updates self.state
+            calls compute_score and updates self.solution if play results in a terminal node
+
+        :param play: the play that produces this node from the parent
+        """
+        self.plays.append(play)
+        self.state = self.compute_state(play)
+        self.solution = (None, self.compute_score())
+
+    def compute_state(self, play):
+        """
+        calculates new state based on current state and specified play
+        default implementation is to create a string from the list of plays
+
+        :param play: the play that produces this node from the parent
+        :return: new state
+        """
+        return "".join(self.plays)
+
+    def compute_score(self) -> float or None:
+        """
+        calculates the score of a terminal node
+        must be overridden
+
+        :return: score for a terminal node; None for a non-terminal node
+        """
+        return 0 if self.is_terminal() else None
+
+    def get_options(self):
+        """
+        returns a list of possible plays
+        must be overridden
+
+        nodes should be returned in opposite order of the order you want to evaluate them in
+        """
+        return []
+
+    def get_child(self, play):
+        """
+        returns a child of this node resulting from making the specified play
+        must be overridden
+        """
+        return Node(parent=self, play=play)
+
+    def get_children(self):
+        """ returns a list of child nodes, one for each play returned by get_options() """
+        return [ self.get_child(option) for option in self.get_options() ]
+
+    def get_state(self):
+        """  returns a copy of self.state  - must be overridden if state is not a string"""
+        return self.state
+
+    def get_plays(self):
+        """ returns a copy of self.plays - must be overridden if plays is not copyable"""
+        return self.plays.copy()
+
+    def get_last_play(self):
+        """ returns the most recent play - must be overridden if plays is not a list"""
+        return None if len(self.plays) == 0 else self.plays[-1]
+
+    def evaluate(self) -> float or None:
+        """
+            returns score of a terminal node
+            returns string representing next to play for a non-terminal node
+        """
+        return self.solution[1] if self.is_terminal() else self.player()
+
+    def get_P(self) -> set[str]:
+        """
+        if this is a terminal node, returns a set containing the ids of terminal nodes with the same value
+        otherwise returns a set containing only this id
+        must be overridden
+        """
+        return { self.id() }
+
+    def get_R(self, S:set) -> set[str]:
+        """
+        returns nodes that can generate a node in S
+        must be overridden
+
+        :param S: a set of similar nodes
+        :return: a set of node ids like this node that have an immediate successor in set S
+        """
+        return { self.id() }
+
+    def get_C(self, S:set):
+        """
+        returns nodes that must generate a node in S
+        must be overridden
+
+        :param S: a set of similar nodes
+        :return: a set of node ids like this node whose immediate successors are all in set S
+        """
+        return { self.id() }
+
+    def get_play(self, S:set):
+        """
+        returns the play needed to move from this node to some node in the specified set
+        must be overridden
+
+        :param S: a set of similar nodes
+        """
+        return None
+
 MAX_PLAYS = 6
 MIN_SCORE = 0.0
 MAX_SCORE = float(MAX_PLAYS)
 
-class TestNode:
-    def __init__(self, play=None, parent=None):
-        self.plays = parent.plays if parent else ''
-        if play:
-            self.plays += play
-        self.solution = (None, None)
+class TestNode(Node):
+    """
+    Node for a simple game where each player plays either 'A' or 'B'
+    The final score for max is the number of A's played
 
-    def id(self):
-        return self.plays
+    Overrides:
+        __init__(max_plays)
+        is_terminal()
+        compute_score()
+        get_options()
+        get_child()
+        get_P()
+        get_R()
+        get_S()
+    """
 
-    def current_play(self):
-        if len(self.plays) == 0:
-            return None
-        else:
-            return self.plays[-1]
+    max_plays = 2
 
-    def get_children(self):
-        if self.is_terminal():
-            return []
-        else:
-            return [TestNode('B', self), TestNode('A', self)]
+    def __init__(self, parent=None, play=None, next_to_play=None, max_plays:int = None):
+        """
+        Initializer
 
-    # returns score for a terminal node
-    # returns next to play ('min' or 'max') for a non-terminal node
-    def evaluate(self):
-        if self.is_terminal():
-            score = 0
-            for play in self.plays:
-                if play == 'A':
-                    score += 1
-            return score
-        else:
-            return self.next_to_play()
+        :param parent: immediate precursor of this node
+        :param play: the play that produces this node from the parent
+        :param next_to_play: 0 if max plays next; 1 if min; Defaults to opposite of parent or max if no parent
+        :param max_plays: defines number of plays before a note is declarer terminal, default is 2
+            (needed only for root)
+        """
+        if max_plays:
+            TestNode.max_plays = max_plays
+        super().__init__(parent=parent, play=play, next_to_play=None)
 
-    # if this is a terminal node, return a set containing the ids of terminal nodes with the same value
-    # otherwise return a set containing only this id
-    def P(self):
+    def is_terminal(self) -> bool:
+        """  returns True for a terminal node """
+        return len(self.plays) >= TestNode.max_plays
+
+    def compute_score(self) -> float or None:
+        """
+        calculates the score of a terminal node
+
+        :return: number of A's played for a terminal node; None for a non-terminal node
+        """
+        return self._counts()[0] if self.is_terminal() else None
+
+    def get_options(self):
+        """ returns a list of possible plays """
+        return ['B', 'A']
+
+    def get_child(self, play):
+        """ returns a child of this node resulting from making the specified play  - must be overridden """
+        return TestNode(parent=self, play=play)
+
+    def get_P(self) -> set[str]:
+        """
+        if this is a terminal node, returns a set containing the ids of terminal nodes with the same value
+        otherwise returns a set containing only this id
+        """
         if not self.is_terminal():
             return { self.id() }
         else:
             return TestNode._permutations(*self._counts())
 
-    # S is a set of node ids
-    # return the ids of nodes that have an immediate successor in set S
-    def R(self, S):
+    def get_R(self, S:set) -> set[str]:
+        """
+        returns nodes that can generate a node in S
+
+        :param S: a set of similar nodes
+        :return: a set of node ids like this node that have an immediate successor in set S
+        """
         return { id[:-1] for id in S }
 
-    # S is a set of node ids
-    # return the ids of nodes for which all immediate successors are in set S
-    def C(self, S):
+    def get_C(self, S:set):
+        """
+        returns nodes that must generate a node in S
+        must be overridden
+
+        :param S: a set of similar nodes
+        :return: a set of node ids like this node whose immediate successors are all in set S
+        """
         counts = Counter([id[:-1] for id in S])
         return {id for id, count in counts.items() if count == 2}
 
-    def show_solution(self):
-        if self.is_terminal():
-            return f'Terminal node, score={self.evaluate()}'
+    def get_play(self, S:set):
+        """
+        returns the play needed to move from this node to some node in the specified set
+        must be overridden
 
-        if not self.solution[0]:
-            return 'Not solved'
+        :param S: a set of similar nodes
+        """
+        for node_id in S:
+            if self.id() == node_id[:-1]:
+                return node_id[-1]
+        return None
 
-        if self.next_to_play() == 'max':
-            return  f'Max can play {self.solution[0]} to guarantee a score of {self.solution[1]}'
-        else:
-            return f'Min can play {self.solution[0]} to hold max to a score of {self.solution[1]}'
-
-    # private helper functions
-    def is_terminal(self):
-        return len(self.plays) >= MAX_PLAYS
-
-    def next_to_play(self):
-        return 'max' if len(self.plays) % 2 == 0 else 'min'
-
-    def _counts(self):
-        counts = [0, 0]
-        for card in self.plays:
-            if card == 'A':
-                counts[0] += 1
-            else:
-                counts[1] += 1
-        return tuple(counts)
+    def _counts(self) -> (int, int):
+        """
+        returns tuple with numbers of A's plays and number of B's played
+        """
+        return (
+            sum([1 for play in self.plays if play == 'A']),
+            sum([1 for play in self.plays if play == 'B'])
+        )
 
     @staticmethod
-    def _permutations(a_num, b_num):
+    def _permutations(a_num, b_num) -> set[str]:
+        """
+        returns all permutations resulting in the specified counts
+
+        :param a_num: number of A's played
+        :param b_num: number of B's played
+        :return: a set of node ids
+        """
         if a_num == 0 and b_num == 0:
             return {}
         if a_num == 0:
@@ -98,14 +328,14 @@ class TestNode:
         r.extend(['B' + item for item in TestNode._permutations(a_num, b_num - 1)])
         return set(r)
 
-    def __str__(self):
-        return self.plays if len(self.plays) > 0 else 'root'
-
-# for saving the score associated with a node, given a specific alpha and beta
 class N_Transposition:
-    def __init__(self, node_id, alpha, beta, score=None):
+    """
+    for saving the solution for a given node, alpha, and beta
+    """
+
+    def __init__(self, node_id:str, alpha:float, beta:float, solution=(None, None)):
         self.key = (node_id, alpha, beta)
-        self.score = score
+        self.solution = solution
 
     def is_hit(self, node_id, alpha, beta):
         return self.key == (node_id, alpha, beta)
@@ -114,14 +344,18 @@ class N_Transposition:
         return self.key[0] == node_id
 
     def __str__(self):
-        return f'{self.key[0]}, alpha={self.key[1]}, beta={self.key[2]}, score={self.score}'
+        return f'{self.key[0]}, alpha={self.key[1]}, beta={self.key[2]}, solution={self.solution}'
 
 # for saving the score associated with a set of nodes, given a specific alpha and beta
 class S_Transposition:
-    def __init__(self, s, alpha, beta, score=None):
+    """
+    for saving the solution for a given set of similar nodes, alpha, and beta
+    """
+
+    def __init__(self, s, alpha, beta, solution = (set(), None)):
         self.s = s
         self.limits = (alpha, beta)
-        self.score = score
+        self.solution = solution
 
     def is_hit(self, node_id, alpha, beta):
         return node_id in self.s and self.limits == (alpha, beta)
@@ -130,7 +364,7 @@ class S_Transposition:
         return node_id in self.s
 
     def __str__(self):
-        return f'{self.s}, alpha={self.limits[0]}, beta={self.limits[1]}, score={self.score}'
+        return f'{self.s}, alpha={self.limits[0]}, beta={self.limits[1]}, solution={self.solution}'
 
 class TranspositionTable:
     def __init__(self):
@@ -176,24 +410,29 @@ class Stats:
 stats = Stats(MAX_PLAYS)
 T = TranspositionTable()
 
-"""
-alpha - max has a way to guarantee this score 
-    if examining plays for min, once he has a way to hold max to this score,
-    he can't do better, so there is no need to continue our examination 
-beta - min has a way to hold max to this score
-    if examining plays for max, once he has a way to guarantee this score,
-    he can't do better, so there is no need to continue our evaluation 
-    
-returns the score for the specified node
-"""
+def alpha_beta(node:Node, alpha:float, beta:float, level=0, verbose=False):
+    """
+    conducts an alpha-beta search
 
-def alpha_beta(node:TestNode, alpha:float, beta:float, level=0, verbose=False):
+    :param node: current node
+    :param alpha:  max has a way to guarantee this score
+        if examining plays for min, once he has a way to hold max to this score,
+        he can't do better, so there is no need to continue our examination
+    :param beta: min has a way to hold max to this score
+        if examining plays for max, once he has a way to guarantee this score,
+        he can't do better, so there is no need to continue our evaluation
+    :param level: starts at 0, incremented as we progress along the tree
+    :param verbose: for tracing logic
+
+    :return: the solution: a tuple consisting of the best play and the resulting score
+    """
+
     prefix = '.' * level * 2
     if verbose:
         if node.is_terminal():
             print(f'{prefix}SOLVING {node} (terminal), alpha={alpha}. beta={beta}')
         else:
-            print(f"{prefix}SOLVING {node} ({node.next_to_play()} to play), alpha={alpha}. beta={beta}")
+            print(f"{prefix}SOLVING {node} ({node.player()} to play), alpha={alpha}. beta={beta}")
 
     global stats
     global T
@@ -207,33 +446,29 @@ def alpha_beta(node:TestNode, alpha:float, beta:float, level=0, verbose=False):
         stats.table_hit(level)
         if verbose:
             print(f'{prefix}***** Table hit: {hit} *****')
-        return hit.score
+        return hit.solution
 
     # if not, evaluate it
     value = node.evaluate()
-    best_play = None
 
     # max's play
     if value == 'max':
-        best_score = MIN_SCORE
-        best_child_id = None
+        solution = (None, MIN_SCORE - 1)
 
         #  calculate score for each of max's possible plays
         children = node.get_children().copy()
         while len(children) > 0:
             child = children.pop()
             if verbose:
-                print(f'{prefix}Considering {node}->{child.current_play()}')
+                print(f'{prefix}Considering {node}->max plays {child.get_last_play()}')
 
-            # score is the best max can do by making child.play
-            score = alpha_beta(child, max(best_score, alpha), beta, level=level+1, verbose=verbose)
+            # score is the best max can do by making this play
+            _, score = alpha_beta(child, max(solution[1], alpha), beta, level=level+1, verbose=verbose)
 
-            if score > best_score:
+            if score > solution[1]:
                 if verbose:
-                    print(f"{prefix}Result for {node}->{child.current_play()}: Selecting for now, since it scores {score}, which is more than current best score of {best_score}")
-                best_play = child.current_play()
-                best_score = score
-                best_child_id = child.id()
+                    print(f"{prefix}Result for {node}->max plays {child.get_last_play()}: Selecting, since it scores {score}, which is more than current best score of {solution[1]}")
+                solution = (child.get_last_play(), score)
 
                 # if this play achieves beta, max can't do better - skip remaining children
                 if score >= beta and len(children) > 0:
@@ -243,32 +478,26 @@ def alpha_beta(node:TestNode, alpha:float, beta:float, level=0, verbose=False):
                     break
             else:
                 if verbose:
-                    print(f"{prefix}Result for {node}->{child.current_play()}: Rejecting, since it scores {score}, which is not more than current best score is {best_score}")
-
-        # all children evaluated
-        node.solution = (best_play, best_score)
+                    print(f"{prefix}Result for {node}->max plays {child.get_last_play()}: Rejecting, since it scores {score}, which is not more than current best score is {solution[1]}")
 
     # min's play
     elif value == 'min':
-        best_score = MAX_SCORE
-        best_child_id = None
+        solution = (None, MAX_SCORE + 1)
 
         #  calculate score for each of min's possible plays
         children = node.get_children().copy()
         while len(children) > 0:
             child = children.pop()
             if verbose:
-                print(f'{prefix}Considering {node}->{child.current_play()}')
+                print(f'{prefix}Considering {node}->min plays {child.get_last_play()}')
 
             # score is the best min can do by making child.play
-            score = alpha_beta(child, alpha, min(best_score, beta), level=level+1, verbose=verbose)
+            _, score = alpha_beta(child, alpha, min(solution[1], beta), level=level+1, verbose=verbose)
 
-            if score < best_score:
+            if score < solution[1]:
                 if verbose:
-                    print(f"{prefix}Result for {node}->{child.current_play()}: Selecting for now, since it scores {score}, which is less than current best score of {best_score} ")
-                best_play = child.current_play()
-                best_score = score
-                best_child_id = child.id()
+                    print(f"{prefix}Result for {node}->min plays {child.get_last_play()}: Selecting, since it scores {score}, which is less than current best score of {solution[1]} ")
+                solution = (child.get_last_play(), score)
 
                 # if this play achieves alpha, min can't do better - skip remaining children
                 if score <= alpha and len(children) > 0:
@@ -278,41 +507,44 @@ def alpha_beta(node:TestNode, alpha:float, beta:float, level=0, verbose=False):
                     break
             else:
                 if verbose:
-                    print(f"{prefix}Result for {node}->{child.current_play()}: Rejecting, since it scores {score}, which is not less than current best score of {best_score} ")
-
-        # all children evaluated
-        node.solution = (best_play, best_score)
+                    print(f"{prefix}Result for {node}->min plays {child.get_last_play()}: Rejecting, since it scores {score}, which is not less than current best score of {solution[1]} ")
 
     # if a terminal node, evaluate it
     else:
-        best_score = value
-
-        node.solution = (best_play, best_score)
+        solution = (None, value)
         if verbose:
             print(f'{prefix}SOLVED {node}, alpha={alpha}, beta={beta}: {node.show_solution()}')
 
     # solved
+    node.solution = solution
     stats.node_evaluated(level)
-    T.add(N_Transposition(node.id(), alpha, beta, best_score))
-    return float(best_score)
-"""
-alpha - max has a way to guarantee this score 
-    if examining plays for min, once he has a way to hold max to this score,
-    he can't do better, so there is no need to continue our examination 
-beta - min has a way to hold max to this score
-    if examining plays for max, once he has a way to guarantee this score,
-    he can't do better, so there is no need to continue our evaluation 
-    
-returns a score and a set S of nodes that have the same score
-S will include the 'node' passed as a parameter and may include other nodes as well, which we call 'similar nodes'
-"""
-def alpha_beta_partitioned(node:TestNode, alpha:float, beta:float, level=0, verbose=False):
+    T.add(N_Transposition(node.id(), alpha, beta, solution))
+    return solution
+
+def alpha_beta_partitioned(node:Node, alpha:float, beta:float, level=0, verbose=False):
+    """
+    conducts an alpha-beta partitioned search
+
+    :param node: current node
+    :param alpha:  max has a way to guarantee this score
+        if examining plays for min, once he has a way to hold max to this score,
+        he can't do better, so there is no need to continue our examination
+    :param beta: min has a way to hold max to this score
+        if examining plays for max, once he has a way to guarantee this score,
+        he can't do better, so there is no need to continue our evaluation
+    :param level: starts at 0, incremented as we progress along the tree
+    :param verbose: for tracing logic
+
+    :return: a tuple, consisting of
+        the problem set: a set of nodes similar to the node being solved
+        the solution: a tuple consisting of the best play and the resulting score
+    """
     prefix = '.' * level * 2
     if verbose:
         if node.is_terminal():
             print(f'{prefix}SOLVING {node} (terminal), alpha={alpha}. beta={beta}')
         else:
-            print(f"{prefix}SOLVING {node} ({node.next_to_play()} to play), alpha={alpha}. beta={beta}")
+            print(f"{prefix}SOLVING {node} ({node.player()} to play), alpha={alpha}. beta={beta}")
 
     global stats
     global T
@@ -321,162 +553,167 @@ def alpha_beta_partitioned(node:TestNode, alpha:float, beta:float, level=0, verb
     # ignore hit for level 0, since we need a play in addition to a score
     hit = T.find(node.id(), alpha, beta) if level > 0 else None
 
-    # if so, return previously calculated score
+    # if so, return previously calculated solution
     if hit:
         stats.table_hit(level)
+
+        # hit.s will be the problem set - the set of similar problems this node was found to be a member of
+        # hit.solution will be a tuple, consisting of the solution set and the score
+        # we must calculate the play that will yield some node in the solution set
+        best_play = node.get_play(hit.solution[0])
         if verbose:
-            print(f'{prefix}***** Table hit: {hit} *****')
-        return hit.score, hit.s
+            print(f'{prefix}***** Table hit: {hit}, play={best_play} *****')
+
+        return hit.s, (best_play, hit.solution[1])
 
     # if not, evaluate it
     value = node.evaluate()
-    best_play = None
     all_S = set() # all nodes similar to the nodes we have examined
 
     # max's play
     if value == 'max':
-        best_score = MIN_SCORE
-        best_child_id = None
-        best_child_S = set()
+        solution = (None, MIN_SCORE - 1)
+        solution_id = None
+        solution_set = set()
 
         #  calculate score for each of max's possible plays
         children = node.get_children().copy()
         while len(children) > 0:
             child = children.pop()
             if verbose:
-                print(f'{prefix}Considering {node}->{child.current_play()}')
+                print(f'{prefix}Considering {node}->{child.get_last_play()}')
 
-            # score is the best max can do by making child.play
-            # S is the set of similar nodes (nodes that have this score)
-            score, S = alpha_beta_partitioned(child, max(best_score, alpha), beta, level=level+1, verbose=verbose)
-            all_S |= S
+            # new_solution_set is the set of nodes similar to this one
+            # new_solution is (best_play, score)
+            new_solution_set, new_solution = alpha_beta_partitioned(child, max(solution[1], alpha), beta, level=level+1, verbose=verbose)
+            all_S |= new_solution_set
 
-            if score > best_score:
+            if new_solution[1] > solution[1]:
                 if verbose:
-                    print(f"{prefix}Result for {node}->{child.current_play()}: Selecting for now, since it scores {score}, which is more than current best score of {best_score}")
-                best_play = child.current_play()
-                best_score = score
-                best_child_id = child.id()
-                best_child_S = S
+                    print(f"{prefix}Result for {node}->{child.get_last_play()}: Selecting, since it scores {new_solution[1]}, which is more than current best score of {solution[1]}")
+                solution = (child.get_last_play(), new_solution[1])
+                solution_id = child.id()
+                solution_set = new_solution_set
 
                 # if this play achieves beta, max can't do better - skip remaining children
-                if score >= beta and len(children) > 0:
+                if solution[1] >= beta and len(children) > 0:
                     stats.branch_pruned(level + 1)
                     if verbose:
                         print(f"{prefix}Pruning {[child.id() for child in children]}, since min can always hold max to at most {beta} ")
                     for child in children:
-                        all_S = all_S  | child.P()
+                        all_S = all_S  | child.get_P()
                     break
             else:
                 if verbose:
-                    print(f"{prefix}Result for {node}->{child.current_play()}: Rejecting, since it scores {score}, which is not more than current best score is {best_score}")
+                    print(f"{prefix}Result for {node}->{child.get_last_play()}: Rejecting, since it scores {new_solution[1]}, which is not more than current best score is {solution[1]}")
 
         # all children evaluated
-        node.solution = (best_play, best_score)
+        node.solution = solution
         if verbose:
             print(f'{prefix}SOLVED {node}: {node.show_solution()}')
-            print(f'{prefix}   Our solution set is nodes similar to {best_child_id}, namely {best_child_S}')
+            print(f'{prefix}   Our solution set is nodes similar to {solution_id}, namely {solution_set}')
             print(f'{prefix}   Our universe is nodes similar to all solutions we tried {all_S}')
-        if best_score == MIN_SCORE:
-            best_S = node.C(all_S)
+        if solution[1] == MIN_SCORE:
+            problem_set = node.get_C(all_S)
             if verbose:
                 print(f"{prefix}   Since we can't score from this position, we won't be able to score from any node constrained to the our universe." )
-                if len(best_S) <= 1:
+                if len(problem_set) <= 1:
                     print(f'{prefix}   {node} is the only node so constrained')
                 else:
-                    print(f'{prefix}   These nodes are {best_S}, which are now defined as similar to {node}')
+                    print(f'{prefix}   These nodes are {problem_set}, which are now defined as similar to {node}')
         else:
-            best_S = node.R(best_child_S) & node.C(all_S)
+            problem_set = node.get_R(solution_set) & node.get_C(all_S)
             if verbose:
-                print(f'{prefix}   Nodes that can reach our solution set are {node.R(best_child_S)}')
-                print(f'{prefix}   Nodes that cannot reach outside our universe are {node.C(all_S)}')
-                if len(best_S) <= 1:
+                print(f'{prefix}   Nodes that can reach our solution set are {node.get_R(solution_set)}')
+                print(f'{prefix}   Nodes that cannot reach outside our universe are {node.get_C(all_S)}')
+                if len(problem_set) <= 1:
                     print(f'{prefix}   {node} is the only node so constrained')
                 else:
-                    print(f'{prefix}   These nodes are {best_S}, which are now defined as similar to {node}')
+                    print(f'{prefix}   These nodes are {problem_set}, which are now defined as similar to {node}')
 
     # min's play
     elif value == 'min':
-        best_score = MAX_SCORE
-        best_child_id = None
-        best_child_S = set()
+        solution = (None,  MAX_SCORE + 1)
+        solution_id = None
+        solution_set = set()
 
         #  calculate score for each of min's possible plays
         children = node.get_children().copy()
         while len(children) > 0:
             child = children.pop()
             if verbose:
-                print(f'{prefix}Considering {node}->{child.current_play()}')
+                print(f'{prefix}Considering {node}->{child.get_last_play()}')
 
-            # score is the best min can do by making child.play
-            # S is the set of similar nodes (nodes that have this score)
-            score, S = alpha_beta_partitioned(child, alpha, min(best_score, beta), level=level+1, verbose=verbose)
-            all_S |= S
+            # new_solution_set is the set of nodes similar to this one
+            # new_solution is (best_play, score)
+            new_solution_set, new_solution = alpha_beta_partitioned(child, alpha, min(solution[1], beta), level=level+1, verbose=verbose)
+            all_S |= new_solution_set
 
-            if score < best_score:
+            if new_solution[1] < solution[1]:
                 if verbose:
-                    print(f"{prefix}Result for {node}->{child.current_play()}: Selecting for now, since it scores {score}, which is less than current best score of {best_score} ")
-                best_play = child.current_play()
-                best_score = score
-                best_child_id = child.id()
-                best_child_S = S
+                    print(f"{prefix}Result for {node}->{child.get_last_play()}: Selecting, since it scores {new_solution[1]}, which is less than current best score of {solution[1]} ")
+                solution = (child.get_last_play(), new_solution[1])
+                solution_id = child.id()
+                solution_set = new_solution_set
 
                 # if this play achieves alpha, min can't do better - skip remaining children
-                if score <= alpha and len(children) > 0:
+                if solution[1] <= alpha and len(children) > 0:
                     stats.branch_pruned(level + 1)
                     if verbose:
                         print(f"{prefix}Pruning {[child.id() for child in children]}, since max can always guarantee at least {alpha} ")
                     for child in children:
-                        all_S = all_S  | child.P()
+                        all_S = all_S  | child.get_P()
                     break
             else:
                 if verbose:
-                    print(f"{prefix}Result for {node}->{child.current_play()}: Rejecting, since it scores {score}, which is not less than current best score of {best_score} ")
+                    print(f"{prefix}Result for {node}->{child.get_last_play()}: Rejecting, since it scores {new_solution[1]}, which is not less than current best score of {solution[1]} ")
 
         # all children evaluated
-        node.solution = (best_play, best_score)
+        node.solution = solution
         if verbose:
             print(f'{prefix}SOLVED {node}: {node.show_solution()}')
-            print(f'{prefix}   Our solution set is nodes similar to {best_child_id}, namely {best_child_S}')
+            print(f'{prefix}   Our solution set is nodes similar to {solution_id}, namely {solution_set}')
             print(f'{prefix}   Our universe is nodes similar to all solutions we tried {all_S}')
-        if best_score == MAX_SCORE:
-            best_S = node.C(all_S)
+        if solution[1] == MAX_SCORE:
+            problem_set = node.get_C(all_S)
             if verbose:
                 print(f"{prefix}   Since we must fail from this node, we must fail from any node constrained to our universe." )
-                if len(best_S) <= 1:
+                if len(problem_set) <= 1:
                     print(f'{prefix}   {node} is the only node so constrained')
                 else:
-                    print(f'{prefix}   These nodes are {best_S}, which are now defined as similar to {node}')
+                    print(f'{prefix}   These nodes are {problem_set}, which are now defined as similar to {node}')
         else:
-            best_S = node.R(best_child_S) & node.C(all_S)
+            problem_set = node.get_R(solution_set) & node.get_C(all_S)
             if verbose:
-                print(f'{prefix}   Nodes that can reach our solution set are {node.R(best_child_S)}')
-                print(f'{prefix}   Nodes that cannot reach outside our universe are {node.C(all_S)}')
-                if len(best_S) <= 1:
+                print(f'{prefix}   Nodes that can reach our solution set are {node.get_R(solution_set)}')
+                print(f'{prefix}   Nodes that cannot reach outside our universe are {node.get_C(all_S)}')
+                if len(problem_set) <= 1:
                     print(f'{prefix}   {node} is the only intersection of these two sets - hence no nodes are similar to {node}')
                 else:
-                    print(f'   The intersection of these two sets ({best_S}) are now defined as similar to {node}')
+                    print(f'{prefix}   The intersection of these two sets ({problem_set}) is now defined as similar to {node}')
 
     # if a terminal node, evaluate it
     # return score and a set of nodes that evaluate to the same value
     else:
-        best_score = value
-        best_S = node.P()
+        solution = (None, value)
+        problem_set = node.get_P()
+        solution_set = set()
 
-        node.solution = (best_play, best_score)
         if verbose:
             print(f'{prefix}SOLVED {node}, alpha={alpha}, beta={beta}: {node.show_solution()}')
-            if len(best_S) <= 1:
+            if len(problem_set) <= 1:
                 print(f'{prefix}   No nodes are similar to {node}')
             else:
-                print(f'{prefix}   Terminal nodes that have the same value ({best_S}) are now defined as similar to {node}')
+                print(f'{prefix}   Terminal nodes that have the same value ({problem_set}) are now defined as similar to {node}')
 
     # solved
-    if len(best_S) == 0:
-        raise Exception(f'{prefix}Empty best_S')
+    if node.id() not in problem_set:
+        raise Exception(f'{prefix}Problem set does not contain the specified problem node')
     stats.node_evaluated(level)
-    T.add(S_Transposition(best_S, alpha, beta, best_score))
-    return float(best_score), best_S
+    T.add(S_Transposition(problem_set, alpha, beta, (solution_set, solution[1])))
+    if verbose:
+        print(f"{prefix}Added to T: {T.table[-1]}")
+    return problem_set, solution
 
 def show_T_entry(node_id):
     print(f'Entries for {node_id}:')
@@ -485,14 +722,12 @@ def show_T_entry(node_id):
 
 def play(node, alpha, beta, verbose=False):
     if not node.is_terminal():
-        alpha_beta_partitioned(node, alpha, beta, verbose=verbose)
-        for child in node.get_children():
-            if child.current_play() == node.solution[0]:
-                return child
+        _, solution = alpha_beta_partitioned(node, alpha, beta, verbose=verbose)
+        return node.get_child(play=solution[0])
     return None
 
 
-node = TestNode()
+node = TestNode(max_plays = MAX_PLAYS)
 # alpha_beta_partitioned(node, 0, MAX_PLAYS, verbose=True)
 # print(f'Final solution = {node.show_solution()}')
 # print(stats)
@@ -513,9 +748,9 @@ while node:
 
 # node = TestNode()
 # node.plays = 'AAB'
-# print(node.P())
-# print(node.R(node.P()))
-# print(node.C({'AAB', 'AAA', 'ABA'}))
+# print(node.get_P())
+# print(node.get_R(node.get_P()))
+# print(node.get_C({'AAB', 'AAA', 'ABA'}))
 
 
 
