@@ -1,5 +1,5 @@
-from collections import Counter
-from ruleset import RuleSet
+from ruleset import Conjunction, RuleSet, Disjunction
+from typing import Callable
 
 class Node:
     """
@@ -38,16 +38,10 @@ class Node:
             returns string representing next to play for a non-terminal node
 
     Methods required to use alpha_beta_partitioned search:
-        get_p() -> set[str]
-            if this is a terminal node, returns a set containing the ids of terminal nodes with the same value
-            otherwise returns a set containing only this id
-        get_r(S) -> set[str]
-            returns the ids of nodes like this node that have an immediate successor in set S
-        get_c(S) -> set[str]
-            returns a set of node ids like this node whose immediate successors are all in set S
-        get_play(S)
-            returns the play needed to move from this node to some node in the specified set
-
+        is_similar() -- determines if specified node is similar to this node
+        can_reach(r_set) -- returns a function to determine if a successor to the specified node is in the given set
+        must_reach(r_set) -- returns a function to determine if all successors to the specified node are in the given set
+        find_play(r_set) --returns a play needed to move from this node to some node in the specified set
     """
 
     def __init__(self, parent=None, play=None, next_to_play=None, default_state=None, default_plays=None):
@@ -175,54 +169,52 @@ class Node:
         """
         return self.solution[1] if self.is_terminal() else self.player()
 
-    def get_p(self) -> set[str]:
+    def is_similar(self, node_id:str) -> bool:
         """
-        if this is a terminal node, returns a set containing the ids of terminal nodes with the same value
-        otherwise returns a set containing only this id
-        must be overridden
+        determines if specified node is similar to this node
+        
+        :param node_id: id of node to test
+        :return: True or False
         """
-        return { self.id() }
-
-    def is_in_p(self, node_id:str) -> bool:
         return False
 
-    def get_r(self, s:set) -> set[str]:
-        """
-        returns nodes that can generate a node in S
-        must be overridden
+    def p_set(self) -> RuleSet:
+        return RuleSet(self.is_similar, f"nodes similar to {self}")
 
-        :param s: a set of similar nodes
-        :return: a set of node ids like this node that have an immediate successor in set S
+    def can_reach(self, node_id:str, rule_set:RuleSet) -> bool:
         """
-        return { self.id() }
+        determines if a successor to the given node is in the given set
 
-    def is_in_r(self, node_id:str, r_set:RuleSet) -> bool:
+        :param node_id: the node to consider
+        :param rule_set: the set of possible successors
+        :return: True or False
+        """
         return False
 
-    def get_c(self, s:set):
-        """
-        returns nodes that must generate a node in S
-        must be overridden
+    def r_set(self, rule_set:RuleSet)->RuleSet:
+        return RuleSet(lambda node_id: self.can_reach(node_id, rule_set), f"nodes that can reach {rule_set}")
 
-        :param s: a set of similar nodes
-        :return: a set of node ids like this node whose immediate successors are all in set S
+    def must_reach(self, node_id:str, rule_set:RuleSet) -> bool:
         """
-        return { self.id() }
+        determines if all successors to the given node are in the given set
 
-    def is_in_c(self, node_id:str, r_set:RuleSet) -> bool:
+        :param node_id: the node to consider
+        :param rule_set: the set of possible successors
+        :return: True or False
+        """
         return False
+    
+    def c_set(self, rule_set:RuleSet)->RuleSet:
+        return RuleSet(lambda node_id: self.must_reach(node_id, rule_set), f"nodes that must reach {rule_set}")
 
-    def get_play(self, s:set):
+    def find_play(self, rule_set:RuleSet):
         """
-        returns the play needed to move from this node to some node in the specified set
-        must be overridden
+        returns a play needed to move from this node to some node in the specified set
 
-        :param s: a set of similar nodes
+        :param rule_set: the set we wish to reach
+        :return: a play to reach it
         """
         return None
-
-    def get_play_from_rule_set(self, r_set:RuleSet):
-        return False
 
 class TestNode(Node):
     """
@@ -235,9 +227,10 @@ class TestNode(Node):
         compute_score()
         get_options()
         get_child()
-        get_p()
-        get_r()
-        get_S()
+        is_similar()
+        can_reach(r_set)
+        must_reach(r_set)
+        find_play(r_set)
     """
 
     max_plays = 2
@@ -276,47 +269,17 @@ class TestNode(Node):
         """ returns a child of this node resulting from making the specified play  - must be overridden """
         return TestNode(parent=self, play=play)
 
-    def get_p(self) -> set[str]:
-        """
-        if this is a terminal node, returns a set containing the ids of terminal nodes with the same value
-        otherwise returns a set containing only this id
-        """
-        if not self.is_terminal():
-            return { self.id() }
-        else:
-            return TestNode._permutations(*self._counts(self.id()))
-
-    def is_in_p(self, node_id:str) -> bool:
+    def is_similar(self, node_id:str) -> bool:
         if self.is_terminal():
             return self._counts(node_id) == self._counts(self.id())
         else:
             return node_id == self.id()
 
-    def get_r(self, s:set) -> set[str]:
-        """
-        returns nodes that can generate a node in S
-
-        :param s: a set of similar nodes
-        :return: a set of node ids like this node that have an immediate successor in set S
-        """
-        return { node_id[:-1] for node_id in s }
-
-    def is_in_r(self, node_id:str, r_set:RuleSet) -> bool:
-        return r_set.contains(node_id + 'A') or r_set.contains(node_id + 'B')
-
-    def get_c(self, s:set):
-        """
-        returns nodes that must generate a node in S
-        must be overridden
-
-        :param s: a set of similar nodes
-        :return: a set of node ids like this node whose immediate successors are all in set S
-        """
-        counts = Counter([node_id[:-1] for node_id in s])
-        return {node_id for node_id, count in counts.items() if count == 2}
+    def can_reach(self, node_id:str, rule_set:RuleSet) -> bool:
+        return rule_set.contains(node_id + 'A') or rule_set.contains(node_id + 'B')
     
-    def is_in_c(self, node_id:str, r_set:RuleSet) -> bool:
-        return r_set.contains(node_id + 'A') and r_set.contains(node_id + 'B')
+    def must_reach(self, node_id, rule_set:RuleSet) -> Callable[[str], bool]:
+        return rule_set.contains(node_id + 'A') and rule_set.contains(node_id + 'B')
 
     def get_play(self, s:set):
         """
@@ -329,7 +292,7 @@ class TestNode(Node):
                 return node_id[-1]
         return None
     
-    def get_play_from_rule_set(self, s:RuleSet):
+    def find_play(self, s:RuleSet):
         if s.contains(self.id() + 'A'):
             return 'A'
         if s.contains(self.id() + 'A'):
@@ -386,16 +349,16 @@ class STransposition:
     for saving the solution for a given set of similar nodes, alpha, and beta
     """
 
-    def __init__(self, s, alpha, beta, solution = (set(), None)):
+    def __init__(self, s:RuleSet, alpha, beta, solution:(RuleSet, float)=(RuleSet(None, 'empty set'), None)):
         self.s = s
         self.limits = (alpha, beta)
         self.solution = solution
 
     def is_hit(self, node_id, alpha, beta):
-        return node_id in self.s and self.limits == (alpha, beta)
+        return self.s.contains(node_id) and self.limits == (alpha, beta)
 
     def is_hit_node_only(self, node_id):
-        return node_id in self.s
+        return self.s.contains(node_id)
 
     def __str__(self):
         return f'{self.s}, alpha={self.limits[0]}, beta={self.limits[1]}, solution={self.solution}'
@@ -501,8 +464,7 @@ class Game:
                 print(f"{prefix}SOLVING {node} ({node.player()} to play), alpha={alpha}. beta={beta}")
 
         # see if we've seen this problem before
-        # ignore hit for level 0, since we need a play in addition to a score
-        hit = self.t_table.find(node.id(), alpha, beta) if level > 0 else None
+        hit = self.t_table.find(node.id(), alpha, beta)
 
         # if so, return previously calculated score
         if hit:
@@ -610,8 +572,7 @@ class Game:
                 print(f"{prefix}SOLVING {node} ({node.player()} to play), alpha={alpha}. beta={beta}")
 
         # see if we've seen this problem before
-        # ignore hit for level 0, since we need a play in addition to a score
-        hit = self.t_table.find(node.id(), alpha, beta) if level > 0 else None
+        hit = self.t_table.find(node.id(), alpha, beta)
 
         # if so, return previously calculated solution
         if hit:
@@ -620,7 +581,7 @@ class Game:
             # hit.s will be the problem set - the set of similar problems this node was found to be a member of
             # hit.solution will be a tuple, consisting of the solution set and the score
             # we must calculate the play that will yield some node in the solution set
-            best_play = node.get_play(hit.solution[0])
+            best_play = node.find_play(hit.solution[0])
             if verbose:
                 print(f'{prefix}***** Table hit: {hit}, play={best_play} *****')
 
@@ -628,13 +589,12 @@ class Game:
 
         # if not, evaluate it
         value = node.evaluate()
-        all_s = set() # all nodes similar to the nodes we have examined
+        all_s = Disjunction() # all nodes similar to the nodes we have examined
 
         # max's play
         if value == node.player_names()[0]:
             solution = (None, float('-inf'))
-            solution_id = None
-            solution_set = set()
+            solution_set = RuleSet(None, "empty set")
 
             #  calculate score for each of max's possible plays
             children = node.get_children().copy()
@@ -646,13 +606,12 @@ class Game:
                 # new_solution_set is the set of nodes similar to this one
                 # new_solution is (best_play, score)
                 new_solution_set, new_solution = self.alpha_beta_partitioned(child, max(solution[1], alpha), beta, level=level+1, verbose=verbose)
-                all_s |= new_solution_set
+                all_s.add_rule_set(new_solution_set)
 
                 if new_solution[1] > solution[1]:
                     if verbose:
                         print(f"{prefix}Result for {node}->{child.get_last_play()}: Selecting, since it scores {new_solution[1]}, which is more than current best score of {solution[1]}")
                     solution = (child.get_last_play(), new_solution[1])
-                    solution_id = child.id()
                     solution_set = new_solution_set
 
                     # if this play achieves beta, max can't do better - skip remaining children
@@ -661,7 +620,7 @@ class Game:
                         if verbose:
                             print(f"{prefix}Pruning {[child.id() for child in children]}, since {node.opponent()} can always hold {node.player()} to at most {beta} ")
                         for child in children:
-                            all_s = all_s  | child.get_p()
+                            all_s.add_rule_set(child.p_set())
                         break
                 else:
                     if verbose:
@@ -669,33 +628,26 @@ class Game:
 
             # all children evaluated
             node.solution = solution
-            if verbose:
-                print(f'{prefix}SOLVED {node}: {node.show_solution()}')
-                print(f'{prefix}   Our solution set is nodes similar to {solution_id}, namely {solution_set}')
-                print(f'{prefix}   Our universe is nodes similar to all solutions we tried {all_s}')
+
+            """
+                solution_set contains nodes similar to the solution we found
+                all_s contains nodes similar to all solutions we tried 
+            """
             if solution[1] == self.min_score:
-                problem_set = node.get_c(all_s)
-                if verbose:
-                    print(f"{prefix}   Since we can't score from this position, we won't be able to score from any node constrained to the our universe." )
-                    if len(problem_set) <= 1:
-                        print(f'{prefix}   {node} is the only node so constrained')
-                    else:
-                        print(f'{prefix}   These nodes are {problem_set}, which are now defined as similar to {node}')
+                # Since we can't score from this position, we won't be able to score from any node constrained to our universe
+                problem_set = node.c_set(all_s)
             else:
-                problem_set = node.get_r(solution_set) & node.get_c(all_s)
-                if verbose:
-                    print(f'{prefix}   Nodes that can reach our solution set are {node.get_r(solution_set)}')
-                    print(f'{prefix}   Nodes that cannot reach outside our universe are {node.get_c(all_s)}')
-                    if len(problem_set) <= 1:
-                        print(f'{prefix}   {node} is the only node so constrained')
-                    else:
-                        print(f'{prefix}   These nodes are {problem_set}, which are now defined as similar to {node}')
+                """
+                    Nodes similar to our problem node belong to the intersection of two sets:
+                        Nodes that can reach solution_set
+                        Nodes that cannot reach outside all_s
+                """
+                problem_set = Conjunction(node.r_set(solution_set), node.c_set(all_s))
 
         # min's play
         elif value == node.player_names()[1]:
             solution = (None,  float('inf'))
-            solution_id = None
-            solution_set = set()
+            solution_set = RuleSet(None, "empty set")
 
             #  calculate score for each of min's possible plays
             children = node.get_children().copy()
@@ -707,13 +659,12 @@ class Game:
                 # new_solution_set is the set of nodes similar to this one
                 # new_solution is (best_play, score)
                 new_solution_set, new_solution = self.alpha_beta_partitioned(child, alpha, min(solution[1], beta), level=level+1, verbose=verbose)
-                all_s |= new_solution_set
+                all_s.add_rule_set(new_solution_set)
 
                 if new_solution[1] < solution[1]:
                     if verbose:
                         print(f"{prefix}Result for {node}->{child.get_last_play()}: Selecting, since it scores {new_solution[1]}, which is less than current best score of {solution[1]} ")
                     solution = (child.get_last_play(), new_solution[1])
-                    solution_id = child.id()
                     solution_set = new_solution_set
 
                     # if this play achieves alpha, min can't do better - skip remaining children
@@ -722,7 +673,7 @@ class Game:
                         if verbose:
                             print(f"{prefix}Pruning {[child.id() for child in children]}, since {node.opponent()} can always guarantee at least {alpha} ")
                         for child in children:
-                            all_s = all_s  | child.get_p()
+                            all_s.add_rule_set(child.p_set())
                         break
                 else:
                     if verbose:
@@ -730,57 +681,45 @@ class Game:
 
             # all children evaluated
             node.solution = solution
-            if verbose:
-                print(f'{prefix}SOLVED {node}: {node.show_solution()}')
-                print(f'{prefix}   Our solution set is nodes similar to {solution_id}, namely {solution_set}')
-                print(f'{prefix}   Our universe is nodes similar to all solutions we tried {all_s}')
+
+            """
+                solution_set contains nodes similar to the solution we found
+                all_s contains nodes similar to all solutions we tried 
+            """
             if solution[1] == self.max_score:
-                problem_set = node.get_c(all_s)
-                if verbose:
-                    print(f"{prefix}   Since we must fail from this node, we must fail from any node constrained to our universe." )
-                    if len(problem_set) <= 1:
-                        print(f'{prefix}   {node} is the only node so constrained')
-                    else:
-                        print(f'{prefix}   These nodes are {problem_set}, which are now defined as similar to {node}')
+                # Since we can't score from this position, we won't be able to score from any node constrained to our universe
+                problem_set = node.c_set(all_s)
             else:
-                problem_set = node.get_r(solution_set) & node.get_c(all_s)
-                if verbose:
-                    print(f'{prefix}   Nodes that can reach our solution set are {node.get_r(solution_set)}')
-                    print(f'{prefix}   Nodes that cannot reach outside our universe are {node.get_c(all_s)}')
-                    if len(problem_set) <= 1:
-                        print(f'{prefix}   {node} is the only intersection of these two sets - hence no nodes are similar to {node}')
-                    else:
-                        print(f'{prefix}   The intersection of these two sets ({problem_set}) is now defined as similar to {node}')
+                """
+                    Nodes similar to our problem node belong to the intersection of two sets:
+                        Nodes that can reach solution_set
+                        Nodes that cannot reach outside all_s
+                """
+                problem_set = Conjunction(node.r_set(solution_set), node.c_set(all_s))
 
         # if a terminal node, evaluate it
         # return score and a set of nodes that evaluate to the same value
         else:
             solution = (None, value)
-            problem_set = node.get_p()
-            solution_set = set()
-
-            if verbose:
-                print(f'{prefix}SOLVED {node}, alpha={alpha}, beta={beta}: {node.show_solution()}')
-                if len(problem_set) <= 1:
-                    print(f'{prefix}   No nodes are similar to {node}')
-                else:
-                    print(f'{prefix}   Terminal nodes that have the same value ({problem_set}) are now defined as similar to {node}')
+            problem_set = node.p_set()
+            solution_set = RuleSet(None, 'empty set')
 
         # solved
-        if node.id() not in problem_set:
+        if not problem_set.contains(node.id()):
             raise Exception(f'{prefix}Problem set does not contain the specified problem node')
         self.stats.node_evaluated(level)
         self.t_table.add(STransposition(problem_set, alpha, beta, (solution_set, solution[1])))
         if verbose:
-            print(f"{prefix}Added to transition table: {self.t_table.table[-1]}")
+            print(f"{prefix}SOLVED {node}: {node.show_solution()}")
         return problem_set, solution
 
 
 root = TestNode(max_plays = 6)
 game = Game(min_score = 0.0, max_score = 6.0, max_levels = 6)
-game.solve(root,0, 6, partitioned=True, verbose=False)
+game.solve(root,0, 6, partitioned=True, verbose=True)
 # game.play(node,0, 6, partitioned=True, verbose=False)
 game.show_stats()
+
 
 
 

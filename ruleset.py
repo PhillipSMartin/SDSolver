@@ -1,25 +1,42 @@
+from typing import Callable
+
+
 class RuleSet:
-    def __init__(self, fn):
+    def __init__(self, fn: Callable[[str], bool] = None, descr: str = None):
         self.fn = fn
+        self.descr = descr
 
     def contains(self, node):
-        return self.fn(node)
+        return self.fn(node) if self.fn else False
 
-class FiniteSet(RuleSet):
-    def __init__(self, s:set):
-        self.s = s
+    def __str__(self):
+        return self.descr or "RuleSet"
+
+
+class EnumeratedSet(RuleSet):
+    def __init__(self, s: set = None):
+        self.s = s or set()
         super().__init__(lambda node: node in self.s)
 
+    def __str__(self):
+        return str(self.s)
+
+
 class Negation(RuleSet):
-    def __init__(self, r1:RuleSet):
-        super().__init__(lambda node: not r1.contains(node))
+    def __init__(self, r: RuleSet):
+        self.r = r
+        super().__init__(lambda node: not r.contains(node))
+
+    def __str__(self):
+        return f"Not {self.r}"
+
 
 class Disjunction(RuleSet):
-    def __init__(self):
+    def __init__(self, *args):
         super().__init__(self.fn)
-        self.r_sets = []
+        self.r_sets = list(args)
 
-    def add_rule_set(self, r_set:RuleSet):
+    def add_rule_set(self, r_set: RuleSet):
         self.r_sets.append(r_set)
 
     def fn(self, node):
@@ -30,12 +47,16 @@ class Disjunction(RuleSet):
                 break
         return result
 
-class Conjunction(RuleSet):
-    def __init__(self):
-        super().__init__(self.fn)
-        self.r_sets = []
+    def __str__(self):
+        return " or ".join([str(r_set) for r_set in self.r_sets])
 
-    def add_rule_set(self, r_set:RuleSet):
+
+class Conjunction(RuleSet):
+    def __init__(self, *args):
+        super().__init__(self.fn)
+        self.r_sets = list(args)
+
+    def add_rule_set(self, r_set: RuleSet):
         self.r_sets.append(r_set)
 
     def fn(self, node):
@@ -46,4 +67,10 @@ class Conjunction(RuleSet):
                 break
         return result
 
+    def __str__(self):
+        return " and ".join([str(r_set) for r_set in self.r_sets])
 
+r = RuleSet(lambda x: 0 == x % 2, "Divisible by 2")
+r2 = RuleSet(lambda x: 0 == x % 3, "Divisible by 3")
+r3 = Disjunction(r, Negation(r2))
+print(r3)
