@@ -10,7 +10,12 @@ class RuleSet:
         return self.fn(node) if self.fn else False
 
     def __str__(self):
-        return self.descr or "RuleSet"
+        if self.descr:
+            return self.descr
+        elif not self.fn:
+            return "empty set"
+        else:
+            return "RuleSet"
 
 
 class EnumeratedSet(RuleSet):
@@ -70,7 +75,3 @@ class Conjunction(RuleSet):
     def __str__(self):
         return " and ".join([str(r_set) for r_set in self.r_sets])
 
-r = RuleSet(lambda x: 0 == x % 2, "Divisible by 2")
-r2 = RuleSet(lambda x: 0 == x % 3, "Divisible by 3")
-r3 = Disjunction(r, Negation(r2))
-print(r3)
