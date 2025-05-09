@@ -85,56 +85,56 @@ class TicTacToeNode(Node):
         return '.' not in self.state or self._winner()
 
 
-def rotate(board):
-    """Rotate the board 90 degrees clockwise."""
-    return [list(row) for row in zip(*board[::-1])]
-
-
-def reflect(board, axis):
-    """Reflect the board along the specified axis."""
-    if axis == "horizontal":
-        return board[::-1]
-    elif axis == "vertical":
-        return [row[::-1] for row in board]
-    elif axis == "diagonal_main":
-        return [list(row) for row in zip(*board)]
-    elif axis == "diagonal_secondary":
-        return [list(row[::-1]) for row in zip(*board[::-1])]
-    else:
-        raise ValueError("Invalid reflection axis")
-
-
-def is_transformable(board1, board2):
-    """Check if board1 can be transformed into board2 by rotation or reflection."""
-    transformations = [board1]
-
-    # Generate rotated versions
-    for _ in range(3):
-        board1 = rotate(board1)
-        transformations.append(board1)
-
-    # Generate reflected versions
-    for axis in ["horizontal", "vertical", "diagonal_main", "diagonal_secondary"]:
-        transformations.append(reflect(board1, axis))
-
-    return board2 in transformations
-
-
-# Example usage
-board_a = [
-    ["X", "O", "X"],
-    ["O", "X", "O"],
-    ["X", "O", "X"]
-]
-
-board_b = [
-    ["X", "O", "X"],
-    ["X", "X", "O"],
-    ["O", "O", "X"]
-]
-
-print(is_transformable(board_a, board_b))  # Output: False (in this case)
+# def rotate(board):
+#     """Rotate the board 90 degrees clockwise."""
+#     return [list(row) for row in zip(*board[::-1])]
+#
+#
+# def reflect(board, axis):
+#     """Reflect the board along the specified axis."""
+#     if axis == "horizontal":
+#         return board[::-1]
+#     elif axis == "vertical":
+#         return [row[::-1] for row in board]
+#     elif axis == "diagonal_main":
+#         return [list(row) for row in zip(*board)]
+#     elif axis == "diagonal_secondary":
+#         return [list(row[::-1]) for row in zip(*board[::-1])]
+#     else:
+#         raise ValueError("Invalid reflection axis")
+#
+#
+# def is_transformable(board1, board2):
+#     """Check if board1 can be transformed into board2 by rotation or reflection."""
+#     transformations = [board1]
+#
+#     # Generate rotated versions
+#     for _ in range(3):
+#         board1 = rotate(board1)
+#         transformations.append(board1)
+#
+#     # Generate reflected versions
+#     for axis in ["horizontal", "vertical", "diagonal_main", "diagonal_secondary"]:
+#         transformations.append(reflect(board1, axis))
+#
+#     return board2 in transformations
+#
+#
+# # Example usage
+# board_a = [
+#     ["X", "O", "X"],
+#     ["O", "X", "O"],
+#     ["X", "O", "X"]
+# ]
+#
+# board_b = [
+#     ["X", "O", "X"],
+#     ["X", "X", "O"],
+#     ["O", "O", "X"]
+# ]
+#
+# print(is_transformable(board_a, board_b))  # Output: False (in this case)
 node = TicTacToeNode()
 game = Game(min_score = 0.0, max_score = 1.0, max_levels = 9)
-game.solve(node,0, 6, partitioned=False, verbose=False)
+game.solve(node,0, 1, partitioned=True, verbose=True)
 game.show_stats()
