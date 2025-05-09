@@ -1,8 +1,8 @@
-from typing import Callable
+from typing import Any, Callable
 
 
 class RuleSet:
-    def __init__(self, fn: Callable[[str], bool] = None, descr: str = None):
+    def __init__(self, fn:Callable[[Any],bool] = None, descr: str = None):
         self.fn = fn
         self.descr = descr
 
@@ -53,7 +53,7 @@ class Disjunction(RuleSet):
         return result
 
     def __str__(self):
-        return " or ".join([str(r_set) for r_set in self.r_sets])
+        return "(" + " or ".join([str(r_set) for r_set in self.r_sets]) + ")"
 
 
 class Conjunction(RuleSet):
@@ -73,5 +73,5 @@ class Conjunction(RuleSet):
         return result
 
     def __str__(self):
-        return " and ".join([str(r_set) for r_set in self.r_sets])
+        return "(" + " and ".join([str(r_set) for r_set in self.r_sets]) + ")"
 
