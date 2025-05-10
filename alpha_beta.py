@@ -285,6 +285,42 @@ class TestNode(Node):
         """ returns a child of this node resulting from making the specified play  - must be overridden """
         return TestNode(parent=self, play=play)
 
+    # def is_similar(self) -> set[str]:
+    #     """
+    #     if this is a terminal node, returns a set containing the ids of terminal nodes with the same value
+    #     otherwise returns a set containing only this id
+    #     """
+    #     if not self.is_terminal():
+    #         return { self.id() }
+    #     else:
+    #         return TestNode._permutations(*self._counts(self.id()))
+
+    @staticmethod
+    def _counts(node_id:str) -> (int, int):
+        """
+        returns tuple with numbers of A's plays and number of B's played
+        """
+        return node_id.count('A'), node_id.count('B')
+
+    @staticmethod
+    def _permutations(a_num, b_num) -> set[str]:
+        """
+        returns all permutations resulting in the specified counts
+
+        :param a_num: number of A's played
+        :param b_num: number of B's played
+        :return: a set of node ids
+        """
+        if a_num == 0 and b_num == 0:
+            return set()
+        if a_num == 0:
+            return {'B' * b_num}
+        if b_num == 0:
+            return {'A' * a_num}
+        r = ['A' + item for item in TestNode._permutations(a_num - 1, b_num)]
+        r.extend(['B' + item for item in TestNode._permutations(a_num, b_num - 1)])
+        return set(r)
+
 class NTransposition:
     """
     for saving the solution for a given node, alpha, and beta
@@ -658,7 +694,7 @@ class Game:
 if __name__ ==  '__main__':
     root = TestNode(max_plays = 6)
     game = Game(min_score = 0.0, max_score = 6.0, max_levels = 6)
-    game.solve(root,0, 6, partitioned=False, verbose=True)
+    game.solve(root,0, 6, partitioned=True, verbose=True)
     # game.play(node,0, 6, partitioned=False, verbose=True)
     game.show_stats()
 
