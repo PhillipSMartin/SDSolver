@@ -677,8 +677,6 @@ class Game:
 
         # we have found the solution
         node.solution = (best_play, best_score)
-        if node.id() == 'AAAA':
-            print('here')
 
         # construct the problem set, i.e. nodes similar
         #   to this node that have the same solution
