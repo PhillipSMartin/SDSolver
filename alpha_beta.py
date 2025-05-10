@@ -1,5 +1,6 @@
 from __future__ import annotations
 from ruleset import Conjunction, RuleSet, Disjunction
+from time import time
 from typing import Any
 
 class Node:
@@ -89,13 +90,13 @@ class Node:
 
     def show_solution(self) -> str:
         """ returns a verbal description of the solution """
-        if self.is_terminal():
-            return f'Terminal node, score={self.solution[1]}'
-
-        if not self.solution[0]:
+        play, score = self.solution
+        if self.is_terminal() :
+            return f'Terminal node, score={score}'
+        elif play is not None:
+            return  f'{self.player()} can play {play} to guarantee a score of {score}'
+        else:
             return 'Not solved'
-
-        return  f'{self.player()} can play {self.solution[0]} to guarantee a score of {self.solution[1]}'
 
     def __str__(self) -> str:
         """ returns a string representation to be used in log messages """
@@ -200,10 +201,10 @@ class Node:
         :param rule_set: the set of possible successors
         :return: True if set contains a successor to the specified node, else False
         """
-        return any(rule_set.contains(child) for child in node.get_children())
+        return any(child in rule_set for child in node.get_children())
 
-    def can_precede(self, rule_set:RuleSet)->RuleSet:
-        return RuleSet(lambda node: self.can_precede_rule(node, rule_set), f"nodes that can precede {rule_set}")
+    def can_precede(self, rule_set:RuleSet, descr:str=None)->RuleSet:
+        return RuleSet(lambda node: self.can_precede_rule(node, rule_set), descr=descr)
 
     def can_precede_only_rule(self, node: Node, rule_set:RuleSet) -> bool:
         """
@@ -213,10 +214,10 @@ class Node:
         :param rule_set: the set of possible successors
         :return: rue if set contains all successors to the specified node, else False
         """
-        return all(rule_set.contains(child) for child in node.get_children())
+        return all(child in rule_set for child in node.get_children())
     
-    def can_precede_only(self, rule_set:RuleSet)->RuleSet:
-        return RuleSet(lambda node: self.can_precede_only_rule(node, rule_set), f"nodes that precede only {rule_set}")
+    def can_precede_only(self, rule_set:RuleSet, descr:str=None)->RuleSet:
+        return RuleSet(lambda node: self.can_precede_only_rule(node, rule_set), descr=descr)
 
     def find_play_to_reach(self, rule_set:RuleSet):
         """
@@ -226,8 +227,8 @@ class Node:
         :return: a play to reach it
         """
         for child in self.get_children():
-            if rule_set.contains(child):
-                return child.id()[-1]
+            if child in rule_set:
+                return child.plays[-1]
         return None
 
 
@@ -270,7 +271,11 @@ class TestNode(Node):
 
         :return: number of A's played for a terminal node; None for a non-terminal node
         """
-        return self.id().count('A') if self.is_terminal() else None
+        if not self.is_terminal():
+            return None
+        else:
+            score = self.id().count('A')
+            return score if self.next_to_play == 0 else -score
 
     def get_options(self):
         """ returns a list of possible plays """
@@ -285,7 +290,7 @@ class NTransposition:
     for saving the solution for a given node, alpha, and beta
     """
 
-    def __init__(self, node:Node, alpha:float, beta:float, solution=(Any, None or float)):
+    def __init__(self, node:Node, alpha:float, beta:float, solution=(Any, float)):
         self.key = (node.id(), alpha, beta)
         self.value = solution
 
@@ -301,13 +306,13 @@ class STransposition:
     for saving the solution for a given set of similar nodes, alpha, and beta
     """
 
-    def __init__(self, problem_set:RuleSet, alpha:float, beta:float, value:(RuleSet, float)=(RuleSet(None, 'empty set'), None)):
+    def __init__(self, problem_set:RuleSet, alpha:float, beta:float, value:(RuleSet or set, float)=(set(), None)):
         self.problem_set = problem_set
         self.limits = (alpha, beta)
         self.value = value
 
     def is_hit(self, node, alpha, beta):
-        return self.problem_set.contains(node) and self.limits == (alpha, beta)
+        return node in self.problem_set and self.limits == (alpha, beta)
 
     def __str__(self):
         return f'{self.problem_set}, alpha={self.limits[0]}, beta={self.limits[1]}, score={self.value[1]}, solution_set={self.value[0]}'
@@ -333,18 +338,26 @@ class Stats:
         self._nodes_evaluated = [0] * (max_levels + 1)
         self._prunes = [0] * (max_levels + 1)
         self._table_hits = [0] * (max_levels + 1)
+        self._start_time = time()
+        self._execution_time = 0
 
     def clear(self):
         self._nodes_evaluated[:] = [0] * len(self._nodes_evaluated)
         self._prunes[:] = [0] * len(self._prunes[:])
         self._table_hits[:] = [0] * len(self._table_hits[:])
+        self._start_time = time()
+        self._execution_time = 0
+
+    def end(self):
+        self._execution_time = time() - self._start_time
 
     def __str__(self):
         return f'Total nodes evaluated = {sum(self._nodes_evaluated)}' \
-            f'\nNodes evaluated per level = { self._nodes_evaluated }' \
+            f'\nNodes evaluated per level = {self._nodes_evaluated}' \
             f'\nTotal prunes = {sum(self._prunes)}' \
-            f'\nPrunes per level = { self._prunes }' \
-            f'\nTable hits per level = { self._table_hits }'
+            f'\nPrunes per level = {self._prunes}' \
+            f'\nTable hits per level = {self._table_hits}' \
+            f'\nExecutiontime = {self._execution_time * 1000:.0f} ms'
 
     def node_evaluated(self, level):
         self._nodes_evaluated[level] += 1
@@ -356,6 +369,8 @@ class Stats:
         self._table_hits[level] += 1
 
 class Game:
+    log_message_number = 0
+
     def __init__(self, min_score = 0.0, max_score = 1.0, max_levels = 6):
         self.min_score = min_score
         self.max_score = max_score
@@ -370,6 +385,7 @@ class Game:
         else:
             self.alpha_beta_partitioned(node, alpha, beta, verbose=verbose)
         print(f'SOLUTION:  {node}: {node.show_solution()}')
+        self.stats.end()
         return node
 
     def play(self, node:Node, alpha:float, beta:float, partitioned=False, verbose=False):
@@ -399,10 +415,7 @@ class Game:
         """
 
         if verbose:
-            if node.is_terminal():
-                self.log(f'SOLVING {node} (terminal), alpha={alpha}. beta={beta}', level)
-            else:
-                self.log(f'SOLVING {node} ({node.player()} to play), alpha={alpha}. beta={beta}', level)
+            self.log(f'SOLVING {node} ({node.player()} to play), alpha={alpha}, beta={beta}', level)
 
         # see if we've seen this problem before
         hit = None if node.is_terminal() else self.t_table.find(node, alpha, beta)
@@ -428,14 +441,15 @@ class Game:
                 self.t_table.add(NTransposition(node, alpha, beta, node.solution))
 
             # terminal node
+            # score should be minus if we are solving for min
             else:
-                score = value
+                score = value if alpha >= 0 else -value
 
             self.stats.node_evaluated(level)
 
         # solved
         if verbose:
-            self.log(f'SOLVED {node}, alpha={alpha}, beta={beta}: {node.show_solution()}', level)
+            self.log(f'SOLVED {node} ({node.player()} to play), alpha={alpha}, beta={beta}: {node.show_solution()}', level)
         return -score
 
     def alpha_beta_partitioned(self, node:Node, alpha:float, beta:float, level=0, verbose=False):
@@ -458,10 +472,7 @@ class Game:
         """
 
         if verbose:
-            if node.is_terminal():
-                self.log(f'SOLVING {node} (terminal), alpha={alpha}. beta={beta}', level)
-            else:
-                self.log(f'SOLVING {node} ({node.player()} to play), alpha={alpha}. beta={beta}', level)
+            self.log(f'SOLVING {node} ({node.player()} to play), alpha={alpha}, beta={beta}', level)
 
         # see if we've seen this problem before
         hit = None if node.is_terminal() else self.t_table.find(node, alpha, beta)
@@ -494,17 +505,20 @@ class Game:
                 self.t_table.add(STransposition(problem_set, alpha, beta, (solution_set, score)))
             else:
                 problem_set = node.is_similar()
+                # score should be minus if we are solving for min
                 _, score = node.solution
+                if alpha < 0:
+                    score *= -1
 
             self.stats.node_evaluated(level)
 
         # solved
-        if not problem_set.contains(node):
+        if not node in problem_set:
             raise Exception(f'Problem set does not contain the specified problem node')
 
         # return problem_set and solution
         if verbose:
-            self.log(f'SOLVED {node}: {node.show_solution()}', level)
+            self.log(f'SOLVED {node} ({node.player()} to play), alpha={alpha}, beta={beta}: {node.show_solution()}', level)
         return problem_set, -score
 
     def expand_node(self, node: Node, alpha: float, beta: float, level: int, verbose: bool):
@@ -512,14 +526,13 @@ class Game:
         find solution node among children of the specified node
 
         :param node: the node we are solving
-        :param alpha:  max has a way to guarantee this score within this branch
-        :param beta: min has a way to hold max to this score within this branch
+        :param alpha:  player already has a way to guarantee this score (negative for min)
+        :param beta: opponent has a way to hold player to this score  (negative for min)
         :param level:
         :param verbose:
-        :return: (best play, resulting score)
+        :return: best score (negative for min)
         """
 
-        # a tuple of the best play and the resulting score
         best_play = None
         best_score = float('-inf')
 
@@ -528,7 +541,7 @@ class Game:
         while len(children) > 0:
             child = children.pop()
             if verbose:
-                self.log(f'Considering {node}->{child.get_last_play()}', level)
+                self.log(f'Considering {node}: {node.player()} plays {child.get_last_play()}', level)
 
             new_score = self.alpha_beta(child, - beta, - max(best_score, alpha), level=level + 1, verbose=verbose)
 
@@ -536,22 +549,22 @@ class Game:
             if new_score > best_score:
                 if verbose:
                     self.log(
-                        f'Result for {node}->{child.get_last_play()}: Selecting, since its score of {new_score} improves on previous best score of {best_score}',
+                        f'Result for {node}: {node.player()} plays {child.get_last_play()}: Selecting, since its score of {new_score} improves on previous best score of {best_score}',
                         level)
                 best_play, best_score = (child.get_last_play(), new_score)
 
-                # if this play achieves beta for max or alpha for min, skip remaining children
+                # if this play achieves beta, skip remaining children
                 if new_score >= beta and len(children) > 0:  # make sure we have children to prune
                     self.stats.branch_pruned(level + 1)
                     if verbose:
                         self.log(
-                            f'Pruning {[child.id() for child in children]}, since {node.opponent()} is trying to do better than {-beta}',
+                            f"Pruning {[child.id() for child in children]}, since {node.player()} can't do better than {beta}",
                             level)
                     break
             else:
                 if verbose:
                     self.log(
-                        f'Result for {node}->{child.get_last_play()}: Rejecting, since its score of {new_score} does not improve on previous best score of {best_score}',
+                        f'Result for {node}: {node.player()} plays {child.get_last_play()}: Rejecting, since its score of {new_score} does not improve on previous best score of {best_score}',
                         level)
 
         # we have found the solution
@@ -577,14 +590,14 @@ class Game:
         # the set of nodes similar to the solution node
         solution_set = RuleSet()
         # the set of all solution sets we have examined
-        solution_set_pool = Disjunction()
+        solution_set_pool = Disjunction(descr=f'solution set pool for {node}')
 
         #  calculate score for each child node
         children = node.get_children().copy()
         while len(children) > 0:
             child = children.pop()
             if verbose:
-                self.log(f'Considering {node}->{child.get_last_play()}', level)
+                self.log(f'Considering {node}: {node.player()} plays {child.get_last_play()}', level)
 
             # adjust alpha and beta and solve this node
             # new_solution_set is the set of nodes similar to this child node
@@ -597,7 +610,7 @@ class Game:
             # if new solution improves on previous solution, save it
             if new_score > best_score:
                 if verbose:
-                    self.log(f'Result for {node}->{child.get_last_play()}: Selecting, since its score of {new_score} improves on previous best score of {best_score}', level)
+                    self.log(f'Result for {node}: {node.player()} plays {child.get_last_play()}: Selecting, since its score of {new_score} improves on previous best score of {best_score}', level)
                 best_play, best_score = (child.get_last_play(), new_score)
                 solution_set = new_solution_set
 
@@ -605,7 +618,7 @@ class Game:
                 if best_score >= beta and len(children) > 0: # make sure we have children to prune
                     self.stats.branch_pruned(level + 1)
                     if verbose:
-                        self.log(f'Pruning {[child.id() for child in children]}, since {node.opponent()} is trying to do better than {-beta}', level)
+                        self.log(f"Pruning {[child.id() for child in children]}, since {node.player()} can't do better than {beta}", level)
 
                     # we won't have nodes similar to pruned nodes, but we add the child
                     #  itself as the next best thing
@@ -614,7 +627,7 @@ class Game:
                     break
             else:
                 if verbose:
-                    self.log(f'Result for {node}->{child.get_last_play()}: Rejecting, since its score of {new_score} does not improve on previous best score of {best_score}', level)
+                    self.log(f'Result for {node}: {node.player()} plays {child.get_last_play()}: Rejecting, since its score of {new_score} does not improve on previous best score of {best_score}', level)
 
         # we have found the solution
         node.solution = (best_play, best_score)
@@ -623,24 +636,31 @@ class Game:
         #   to this node that have the same solution
         if best_score == self.min_score:
             # Since we can't score from this position, we won't be able to score from any node constrained to our universe
-            problem_set = node.can_precede_only(solution_set_pool)
+            problem_set = node.can_precede_only(solution_set_pool, descr=f'Nodes similar to {node}')
         else:
             # Nodes similar to our problem node belong to the intersection of two sets:
             #   Nodes that can reach solution_set
             #   Nodes constrained to reach solution_set_pool
-            problem_set = Conjunction(node.can_precede(solution_set), node.can_precede_only(solution_set_pool))
+            problem_set = Conjunction(node.can_precede(solution_set), node.can_precede_only(solution_set_pool), descr=f'Nodes similar to {node}')
 
         return problem_set, solution_set
 
     @staticmethod
     def log(msg:str, level:int):
-        print(f'{'.' * level * 2}{msg}')
+        Game.log_message_number += 1
+        print(f"{Game.log_message_number} {'.' * level * 2}{msg}")
 
-root = TestNode(max_plays = 6)
-game = Game(min_score = 0.0, max_score = 6.0, max_levels = 6)
-game.solve(root,0, 6, partitioned=False, verbose=False)
-# game.play(node,0, 6, partitioned=True, verbose=False)
-game.show_stats()
+        # if Game.log_message_number == 30:
+        #     print('here')
+        if Game.log_message_number > 20753 :
+            quit()
+
+if __name__ ==  '__main__':
+    root = TestNode(max_plays = 6)
+    game = Game(min_score = 0.0, max_score = 6.0, max_levels = 6)
+    game.solve(root,0, 6, partitioned=False, verbose=True)
+    # game.play(node,0, 6, partitioned=False, verbose=True)
+    game.show_stats()
 
 
 

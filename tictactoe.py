@@ -136,5 +136,5 @@ class TicTacToeNode(Node):
 # print(is_transformable(board_a, board_b))  # Output: False (in this case)
 node = TicTacToeNode()
 game = Game(min_score = 0.0, max_score = 1.0, max_levels = 9)
-game.solve(node,0, 1, partitioned=True, verbose=True)
+game.solve(node,0, 1, partitioned=False, verbose=True)
 game.show_stats()
