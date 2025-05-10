@@ -1,5 +1,8 @@
 from __future__ import annotations
-from ruleset import Conjunction, RuleSet, Disjunction
+
+from collections import Counter
+
+from ruleset import Conjunction, Disjunction, IdSet, RuleSet
 from time import time
 from typing import Any
 
@@ -285,15 +288,22 @@ class TestNode(Node):
         """ returns a child of this node resulting from making the specified play  - must be overridden """
         return TestNode(parent=self, play=play)
 
-    # def is_similar(self) -> set[str]:
-    #     """
-    #     if this is a terminal node, returns a set containing the ids of terminal nodes with the same value
-    #     otherwise returns a set containing only this id
-    #     """
-    #     if not self.is_terminal():
-    #         return { self.id() }
-    #     else:
-    #         return TestNode._permutations(*self._counts(self.id()))
+    def is_similar(self) -> IdSet:
+        """
+        if this is a terminal node, returns a set containing the ids of terminal nodes with the same value
+        otherwise returns a set containing only this id
+        """
+        if not self.is_terminal():
+            return IdSet({ self.id() }, f"nodes similar to {self}")
+        else:
+            return IdSet(TestNode._permutations(*self._counts(self.id())), f"nodes similar to {self}")
+
+    def can_precede(self, id_set:IdSet, descr:str=None)->IdSet:
+        return IdSet({ node_id[:-1] for node_id in id_set.s }, descr)
+
+    def can_precede_only(self, id_set:IdSet, descr:str=None) -> IdSet:
+        counts = Counter([node_id[:-1] for node_id in id_set.s])
+        return IdSet({node_id for node_id, count in counts.items() if count == 2}, descr)
 
     @staticmethod
     def _counts(node_id:str) -> (int, int):
@@ -641,7 +651,7 @@ class Game:
             new_solution_set, new_score = self.alpha_beta_partitioned(child, -beta, -max(best_score, alpha), level=level + 1, verbose=verbose)
 
             # keep track of nodes similar to all nodes we have examined
-            solution_set_pool.add_rule_set(new_solution_set)
+            solution_set_pool |= new_solution_set
 
             # if new solution improves on previous solution, save it
             if new_score > best_score:
@@ -659,7 +669,7 @@ class Game:
                     # we won't have nodes similar to pruned nodes, but we add the child
                     #  itself as the next best thing
                     for child in children:
-                        solution_set_pool.add_rule_set(child.is_similar())
+                        solution_set_pool |= child.is_similar()
                     break
             else:
                 if verbose:
@@ -667,6 +677,8 @@ class Game:
 
         # we have found the solution
         node.solution = (best_play, best_score)
+        if node.id() == 'AAAA':
+            print('here')
 
         # construct the problem set, i.e. nodes similar
         #   to this node that have the same solution
